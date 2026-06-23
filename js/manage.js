@@ -5,7 +5,7 @@
   'use strict';
 
   const OWNER = 'airrotc29', REPO = 'branch-communication-webapp', BRANCH = 'main';
-  const APP_VERSION = 'v21 · 2026.06.23 (계정 변경·초기화)';
+  const APP_VERSION = 'v23 · 2026.06.23 (단계별 현황 · 군별 보고서식)';
   const API = 'https://api.github.com';
   const TOKEN_KEY = 'ace_admin_token';
   const LOCAL_KEY = 'ace_branch_reports_local';
@@ -29,14 +29,66 @@
   function deobf(b64) { try { const s = atob(b64); const k = 'aCe2026!'; let o = ''; for (let i = 0; i < s.length; i++) o += String.fromCharCode(s.charCodeAt(i) ^ k.charCodeAt(i % k.length)); return o; } catch (e) { return ''; } }
   window.obfHelper = function (t) { const k = 'aCe2026!'; let s = ''; for (let i = 0; i < t.length; i++) s += String.fromCharCode(t.charCodeAt(i) ^ k.charCodeAt(i % k.length)); return btoa(s); };
 
-  const REPORT_ITEMS = [
-    { k: '1', t: '관리단 구성 동정' },
-    { k: '2', t: '우호 인원 포섭 결과' },
-    { k: '3', t: '포섭 인원 래포 형성' },
-    { k: '4', t: '추진위 미팅 실적' },
-    { k: '5', t: '시행/시공사 관련' },
-    { k: '6', t: '계획 및 착안사항' },
+  // 보고 서식: 군별 → 단계별 → 과제 (각 과제는 소장이 텍스트 입력)
+  const _COMMON = [
+    ['1-1', '관리규약내 관리위원회 결의시 수의계약으로 할수 있다 라는 문구 명문화'],
+    ['1-2', '분양 입주자에게 관리규약 75% 서명 받기'],
+    ['1-3', '입주현황 파악 (임차인, 구분소유자 각각 통계)'],
+    ['1-4', '본사와 협의하여 등기율 조사'],
+    ['1-5', '규약에따라 관리인, 관리위원장, 관리위원 포섭'],
+    ['1-6', '시행사 관련동정 파악'],
+    ['1-7', '시공사 관련동정 파악 (하자 보수협의, 등)'],
   ];
+  const _STAGE4 = [
+    ['1-1', '관리인 선임신고 대행'],
+    ['1-2', '재계약 협의시행'],
+    ['1-3', '인계인수서 작성 및 각종 명의변경 시행'],
+    ['1-4', '재계약 시행'],
+  ];
+  const _mk = (name, rows) => ({ name, tasks: rows.map((r) => ({ no: r[0], t: r[1] })) });
+  const REPORT_STAGES_BY_GROUP = {
+    1: [
+      _mk('공통단계', _COMMON),
+      _mk('2단계 (추진위 자생)', [
+        ['1-1', '추진위 구성인원 파악 보고'],
+        ['1-2', '본사 지원사항 추진위 상대 별도 브리핑 준비/시행'],
+        ['1-3', '추진위 협의 및 활동사항 본사 보고 (회의, 협의 내용 등)'],
+      ]),
+      _mk('3단계 (관리단 집회 준비/시행)', [
+        ['1-1', '추진위와 최초관리단 집회 개최 계획(협력계획) 수립'],
+        ['1-2', '본사 지원사항 추진위 상대 별도 브리핑 준비/시행'],
+        ['1-3', '관리단 집회개최 협조'],
+      ]),
+      _mk('4단계 (재계약 협의, 인계인수)', _STAGE4),
+    ],
+    2: [
+      _mk('공통단계', _COMMON),
+      _mk('1단계 (포섭진행 추진위 구성전)', [
+        ['1-1', '규약에따라 관리인, 관리위원장, 관리위원 포섭 진행사항 본사 보고'],
+        ['1-2', '포섭인원에 대한 관리방안 보고 (소유 전유부에 대한 특별 관리 등)'],
+      ]),
+      _mk('2단계 (포섭완료 추진위 구성 완료)', [
+        ['1-1', '규약에따라 관리인, 관리위원장, 관리위원 포섭 완료 본사 보고'],
+        ['1-2', '추진위 발촉계획 보고 및 발촉'],
+        ['1-3', '추진위 협의 및 활동사항 본사 보고 (회의, 협의 내용 등)'],
+      ]),
+      _mk('3단계 (관리단 집회 준비/시행)', [
+        ['1-1', '추진위와 최초관리단 집회 개최 계획 수립'],
+        ['1-2', '본사 지원사항 추진위 상대 별도 브리핑 준비/시행'],
+        ['1-3', '시행사연락 집합건물법 제9조 3항 분양자의 의무 시행 협의'],
+        ['1-4', '최초관리단 집회 소집통지서 발송'],
+        ['1-5', '전자투표 시행'],
+        ['1-6', '최초관리단집회 시행'],
+      ]),
+      _mk('4단계 (재계약 협의, 인계인수)', _STAGE4),
+    ],
+  };
+  REPORT_STAGES_BY_GROUP[3] = REPORT_STAGES_BY_GROUP[2].map((s) => ({ name: s.name, tasks: s.tasks.map((t) => ({ no: t.no, t: t.t })) })); // 3군 = 2군 동일
+  Object.keys(REPORT_STAGES_BY_GROUP).forEach((g) => {
+    REPORT_STAGES_BY_GROUP[g].forEach((s, si) => s.tasks.forEach((t, ti) => { t.k = 'g' + g + '_' + si + '_' + ti; }));
+  });
+  function stagesForGroup(group) { return REPORT_STAGES_BY_GROUP[group] || REPORT_STAGES_BY_GROUP[2]; }
+  function reportStages(r) { const g = (r && r.group) || ((BRANCHES.find((x) => x.id === (r && r.branchId)) || {}).group); return stagesForGroup(g); }
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
@@ -253,32 +305,63 @@
   }
   function devChip(v) { return v === '우호' ? '<span class="chip yes">시행사 우호</span>' : '<span class="chip">시행사 ?</span>'; }
 
+  // 사업소의 현재 단계 = 보고에 입력된 과제 중 가장 높은(진행된) 단계의 이름.
+  // 보고가 없거나 입력 과제가 없으면 null(미보고).
+  function branchStage(b) {
+    const reps = REPORTS.filter((r) => r.branchId === b.id);
+    let maxSi = -1;
+    reps.forEach((r) => {
+      const items = r.items || {};
+      Object.keys(items).forEach((k) => {
+        if (!items[k]) return;
+        const m = /^g\d+_(\d+)_/.exec(k);
+        if (m) { const si = parseInt(m[1], 10); if (si > maxSi) maxSi = si; }
+      });
+    });
+    if (maxSi < 0) return null;
+    const stages = stagesForGroup(b.group);
+    return stages[maxSi] ? stages[maxSi].name : null;
+  }
+  function stageOrder(name) {
+    if (name == null) return 99; // 미보고는 맨 아래
+    if (/공통/.test(name)) return 0;
+    const m = /^(\d+)단계/.exec(name);
+    return m ? parseInt(m[1], 10) : 50;
+  }
+
   function renderStatus() {
-    // 요약 통계
+    // 요약 통계 (단계 기준)
     const total = BRANCHES.length;
-    const g1 = BRANCHES.filter((b) => b.group === 1).length;
-    const g2 = BRANCHES.filter((b) => b.group === 2).length;
-    const g3 = BRANCHES.filter((b) => b.group === 3).length;
+    const reported = BRANCHES.filter((b) => branchStage(b) !== null).length;
+    const notyet = total - reported;
     $('statRow').innerHTML =
       `<div class="stat"><b>${total}</b><span>전체 사업소</span></div>` +
-      `<div class="stat"><b>${g1}</b><span>1군</span></div>` +
-      `<div class="stat"><b>${g2}</b><span>2군</span></div>` +
-      `<div class="stat"><b>${g3}</b><span>3군</span></div>`;
+      `<div class="stat"><b>${reported}</b><span>보고 진행</span></div>` +
+      `<div class="stat"><b>${notyet}</b><span>미보고</span></div>`;
+
+    // 단계별 그룹화 (관리소장이 입력한 과제로 산출한 현재 단계)
+    const buckets = {};
+    BRANCHES.forEach((b) => {
+      const st = branchStage(b);
+      const key = st == null ? '__none' : st;
+      if (!buckets[key]) buckets[key] = { name: st == null ? '미보고' : st, order: stageOrder(st), list: [] };
+      buckets[key].list.push(b);
+    });
+    const ordered = Object.values(buckets).sort((a, b) => (a.order - b.order) || a.name.localeCompare(b.name));
 
     const wrap = $('groupWrap'); wrap.innerHTML = '';
-    [1, 2, 3].forEach((g) => {
-      const list = BRANCHES.filter((b) => b.group === g);
-      if (!list.length) return;
+    ordered.forEach((bk) => {
       const block = document.createElement('div'); block.className = 'group-block';
-      block.innerHTML = `<div class="group-head"><span class="group-badge g${g}">${g}군</span><span class="group-desc">${esc(META.groupCriteria && META.groupCriteria[g] || '')}</span></div>`;
-      list.forEach((b) => {
+      const cls = bk.name === '미보고' ? 'stage-none' : 'stage';
+      block.innerHTML = `<div class="group-head"><span class="stage-badge ${cls}">${esc(bk.name)}</span><span class="group-desc">${bk.list.length}개 사업소</span></div>`;
+      bk.list.forEach((b) => {
         const cnt = REPORTS.filter((r) => r.branchId === b.id).length;
         const newB = branchUnseen(b.id);
         const dot = newB ? '<span class="newdot"></span>' : '';
         const card = document.createElement('button');
-        card.type = 'button'; card.className = `b-card g${g}` + (newB ? ' is-new' : ''); card.dataset.id = b.id;
+        card.type = 'button'; card.className = `b-card g${b.group}` + (newB ? ' is-new' : ''); card.dataset.id = b.id;
         card.innerHTML =
-          `<div class="b-top"><span class="b-name">${esc(b.name)}${dot}</span>` +
+          `<div class="b-top"><span class="b-name">${esc(b.name)} <span class="group-badge g${b.group}" style="font-size:10px;vertical-align:middle;">${b.group}군</span>${dot}</span>` +
           `<span class="b-count">보고 ${cnt}건 ›</span></div>`;
         block.appendChild(card);
       });
@@ -454,7 +537,7 @@
     items.forEach((r) => {
       const cmt = (r.comments || []).length;
       const isN = isNew(r);
-      const first = REPORT_ITEMS.map((it) => (r.items && r.items[it.k]) ? r.items[it.k] : '').find((x) => x) || '';
+      const first = Object.values(r.items || {}).find((v) => v) || '';
       const card = document.createElement('button');
       card.type = 'button'; card.className = 'report-card' + (isN ? ' is-new' : ''); card.dataset.id = r.id;
       card.innerHTML =
@@ -475,33 +558,32 @@
   $('reportFilter').addEventListener('change', function () { reportFilter = this.value; renderReports(); });
 
   // ---------- 보고 작성 ----------
+  // 선택한 사업소의 군에 맞는 단계별 과제 입력칸 생성
+  function rebuildRmItems() {
+    const b = BRANCHES.find((x) => x.id === $('rmBranch').value);
+    if (!b) { $('rmItems').innerHTML = '<p class="hint">먼저 사업소를 선택하면 해당 군의 단계별 과제가 표시됩니다.</p>'; return; }
+    let h = `<p class="rf-grouptag">${b.group}군 보고서식</p>`;
+    stagesForGroup(b.group).forEach((s) => {
+      h += `<div class="rf-stage">${esc(s.name)}</div>`;
+      s.tasks.forEach((t) => {
+        h += `<div class="r-item"><label><span class="rf-no">${esc(t.no)}</span>${esc(t.t)}</label>` +
+          `<textarea id="rm_${t.k}" rows="2" placeholder="내용 입력 (해당 시)"></textarea></div>`;
+      });
+    });
+    $('rmItems').innerHTML = h;
+  }
   function openReportForm(branchId) {
     $('rmBranch').innerHTML = '<option value="" disabled selected>사업소 선택</option>' +
       BRANCHES.map((b) => `<option value="${esc(b.id)}">${esc(b.name)}</option>`).join('');
     if (branchId) $('rmBranch').value = branchId; else if (reportFilter) $('rmBranch').value = reportFilter;
     $('rmReporter').value = '';
     const d = new Date(); $('rmDate').value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    REPORT_ITEMS.forEach((it) => { if ($('rm' + it.k)) $('rm' + it.k).value = ''; });
-    $('rmOccTotal').value = ''; $('rmOccDone').value = ''; $('rmOccRate').value = '';
+    rebuildRmItems();
     hint($('rmHint'), '', '');
     openModal('reportModal');
   }
   $('fabReport').addEventListener('click', () => openReportForm());
-
-  // 입주율 자동 계산 (입주호실 / 전체호실)
-  function calcOcc() {
-    const t = parseInt($('rmOccTotal').value, 10);
-    const d = parseInt($('rmOccDone').value, 10);
-    if (Number.isFinite(t) && t > 0 && Number.isFinite(d) && d >= 0) {
-      const rate = Math.round((d / t) * 1000) / 10;
-      $('rmOccRate').value = rate + '%';
-      return { total: t, occupied: d, rate };
-    }
-    $('rmOccRate').value = '';
-    return null;
-  }
-  $('rmOccTotal').addEventListener('input', calcOcc);
-  $('rmOccDone').addEventListener('input', calcOcc);
+  $('rmBranch') && $('rmBranch').addEventListener('change', rebuildRmItems);
 
   $('rmSubmit').addEventListener('click', async () => {
     const bId = $('rmBranch').value;
@@ -509,13 +591,12 @@
     const reporter = $('rmReporter').value.trim();
     if (!b || !reporter) { hint($('rmHint'), '사업소와 보고자(관리소장)는 필수입니다.', 'error'); return; }
     const items = {}; let any = false;
-    REPORT_ITEMS.forEach((it) => { const v = ($('rm' + it.k).value || '').trim(); items[it.k] = v; if (v) any = true; });
-    if (!any) { hint($('rmHint'), '최소 한 개 이상의 항목을 작성해 주세요.', 'error'); return; }
+    stagesForGroup(b.group).forEach((s) => s.tasks.forEach((t) => { const el = $('rm_' + t.k); const v = el ? el.value.trim() : ''; items[t.k] = v; if (v) any = true; }));
+    if (!any) { hint($('rmHint'), '최소 한 개 이상의 과제를 작성해 주세요.', 'error'); return; }
     const dv = $('rmDate').value;
     const dateStr = dv ? dv.replace(/-/g, '.') : todayStr();
     const month = dv ? dv.slice(0, 7) : '';
-    const occupancy = calcOcc();
-    const report = { id: uid('r'), branchId: b.id, branchName: b.name, reporter, date: dateStr, month, occupancy, items, ts: Date.now(), comments: [] };
+    const report = { id: uid('r'), branchId: b.id, branchName: b.name, group: b.group, reporter, date: dateStr, month, occupancy: null, items, ts: Date.now(), comments: [] };
     const btn = $('rmSubmit'); btn.disabled = true;
     try {
       hint($('rmHint'), '보고를 올리는 중…', '');
@@ -544,7 +625,12 @@
       `<div style="font-size:12px;color:#5b6573;margin-top:4px;">보고자 ${esc(r.reporter)} · ${esc(r.date)}</div>` +
       '</div>';
     if (r.occupancy) h += pdfBlock('0', '입주현황', `입주 ${r.occupancy.occupied}호실 / 전체 ${r.occupancy.total}호실 · 입주율 ${r.occupancy.rate}%`);
-    REPORT_ITEMS.forEach((it) => { const v = (r.items && r.items[it.k]) || ''; if (v) h += pdfBlock(it.k, it.t, v); });
+    reportStages(r).forEach((s) => {
+      const filled = s.tasks.filter((t) => r.items && r.items[t.k]);
+      if (!filled.length) return;
+      h += `<div style="font-size:13px;font-weight:900;color:#123a6b;margin:14px 0 6px;border-bottom:1px solid #d7e0ee;padding-bottom:3px;">${esc(s.name)}</div>`;
+      filled.forEach((t) => { h += pdfBlock(t.no, t.t, r.items[t.k]); });
+    });
     const cmts = r.comments || [];
     if (cmts.length) {
       h += '<div style="margin-top:14px;font-weight:800;color:#0f2a4a;border-top:1px solid #e2e8f0;padding-top:10px;margin-bottom:6px;">본사 ↔ 현장 소통</div>';
@@ -594,10 +680,13 @@
     if (r.occupancy) {
       h += `<div class="r-block"><div class="bt"><span class="num zero">0</span>입주현황</div><div class="bd">입주 ${esc(r.occupancy.occupied)}호실 / 전체 ${esc(r.occupancy.total)}호실 · <b>입주율 ${esc(r.occupancy.rate)}%</b></div></div>`;
     }
-    REPORT_ITEMS.forEach((it) => {
-      const v = (r.items && r.items[it.k]) ? r.items[it.k] : '';
-      if (!v) return;
-      h += `<div class="r-block"><div class="bt"><span class="num">${it.k}</span>${esc(it.t)}</div><div class="bd">${esc(v)}</div></div>`;
+    reportStages(r).forEach((s) => {
+      const filled = s.tasks.filter((t) => r.items && r.items[t.k]);
+      if (!filled.length) return;
+      h += `<div class="rd-stage">${esc(s.name)}</div>`;
+      filled.forEach((t) => {
+        h += `<div class="r-block"><div class="bt"><span class="rf-no">${esc(t.no)}</span>${esc(t.t)}</div><div class="bd">${esc(r.items[t.k])}</div></div>`;
+      });
     });
 
     h += '<div class="thread-head">💬 본사 ↔ 현장 소통</div><div class="cmts">';
