@@ -5,7 +5,7 @@
   'use strict';
 
   const OWNER = 'airrotc29', REPO = 'branch-communication-webapp', BRANCH = 'main';
-  const APP_VERSION = 'v31 · 2026.06.23 (로그인 게이트)';
+  const APP_VERSION = 'v34 · 2026.06.23 (군 배지 검정 통일)';
   const API = 'https://api.github.com';
   const TOKEN_KEY = 'ace_admin_token';
   const LOCAL_KEY = 'ace_branch_reports_local';
@@ -353,10 +353,14 @@
     const m = /^(\d+)단계/.exec(name);
     return m ? parseInt(m[1], 10) : 50;
   }
+  // 단계명 → 색상 클래스 (s0 공통, s1~s4 단계)
+  function stageColorClass(name) { const o = stageOrder(name); return (o >= 1 && o <= 4) ? ('s' + o) : 's0'; }
+  function stageHex(name) { const o = stageOrder(name); return ({ 1: '#1c5fc4', 2: '#15803d', 3: '#c2660c', 4: '#b91c1c' })[o] || '#334155'; }
 
   function renderStatus() {
     // 사업소 계정은 본인 사업소만 표시. 본사는 전체.
     const lb = lockedBranchId();
+    if ($('statusLead')) $('statusLead').style.display = lb ? 'none' : '';
     const visible = lb ? BRANCHES.filter((b) => b.id === lb) : BRANCHES;
     // 요약 통계 (단계 기준)
     const total = visible.length;
@@ -383,7 +387,7 @@
       // 단계별 색상: 공통=slate, 1=파랑, 2=녹색, 3=주황, 4=적색, 미보고=회색
       let cls = 'stage-none';
       if (bk.name !== '미보고') { const o = bk.order; cls = (o >= 1 && o <= 4) ? ('stage-s' + o) : 'stage-s0'; }
-      block.innerHTML = `<div class="group-head"><span class="stage-badge ${cls}">${esc(bk.name)}</span><span class="group-desc">${bk.list.length}개 사업소</span></div>`;
+      block.innerHTML = `<div class="group-head"><span class="stage-badge ${cls}"><span class="sb-name">${esc(bk.name)}</span><span class="sb-count">${bk.list.length}개</span></span></div>`;
       bk.list.forEach((b) => {
         const cnt = REPORTS.filter((r) => r.branchId === b.id).length;
         const newB = branchUnseen(b.id);
@@ -605,7 +609,7 @@
     if (!grp) { $('rmItems').innerHTML = '<p class="hint">먼저 사업소를 선택하면 해당 군의 단계별 과제가 표시됩니다.</p>'; return; }
     let h = `<p class="rf-grouptag">${grp}군 보고서식</p>`;
     stagesForGroup(grp).forEach((s) => {
-      h += `<div class="rf-stage">${esc(s.name)}</div>`;
+      h += `<div class="rf-stage ${stageColorClass(s.name)}">${esc(s.name)}</div>`;
       s.tasks.forEach((t) => {
         h += `<div class="r-item"><label><span class="rf-no">${esc(t.no)}</span>${esc(t.t)}</label>` +
           `<textarea id="rm_${t.k}" rows="2" placeholder="내용 입력 (해당 시)"></textarea></div>`;
@@ -699,7 +703,7 @@
     reportStages(r).forEach((s) => {
       const filled = s.tasks.filter((t) => r.items && r.items[t.k]);
       if (!filled.length) return;
-      h += `<div style="font-size:13px;font-weight:900;color:#123a6b;margin:14px 0 6px;border-bottom:1px solid #d7e0ee;padding-bottom:3px;">${esc(s.name)}</div>`;
+      h += `<div style="font-size:13px;font-weight:900;color:#fff;background:${stageHex(s.name)};border-radius:6px;margin:14px 0 6px;padding:5px 10px;">${esc(s.name)}</div>`;
       filled.forEach((t) => { h += pdfBlock(t.no, t.t, r.items[t.k]); });
     });
     const cmts = r.comments || [];
@@ -754,7 +758,7 @@
     reportStages(r).forEach((s) => {
       const filled = s.tasks.filter((t) => r.items && r.items[t.k]);
       if (!filled.length) return;
-      h += `<div class="rd-stage">${esc(s.name)}</div>`;
+      h += `<div class="rd-stage ${stageColorClass(s.name)}">${esc(s.name)}</div>`;
       filled.forEach((t) => {
         h += `<div class="r-block"><div class="bt"><span class="rf-no">${esc(t.no)}</span>${esc(t.t)}</div><div class="bd">${esc(r.items[t.k])}</div></div>`;
       });
@@ -827,12 +831,17 @@
   $('addBranchBtn') && $('addBranchBtn').addEventListener('click', () => {
     if (!hasToken()) { alert('사업소 추가는 로그인이 필요합니다.'); openModal('loginModal'); return; }
     $('baName').value = ''; $('baReg').value = ''; $('baGroup').value = '3';
+    if ($('baLoginId')) $('baLoginId').value = ''; if ($('baLoginPw')) $('baLoginPw').value = '';
     hint($('baHint'), '', ''); openModal('branchAddModal');
   });
   $('baSubmit') && $('baSubmit').addEventListener('click', async () => {
     const name = $('baName').value.trim();
     if (!name) { hint($('baHint'), '사업소명을 입력해 주세요.', 'error'); return; }
     if (!hasToken()) { hint($('baHint'), '로그인이 필요합니다.', 'error'); return; }
+    const wantId = ($('baLoginId') ? $('baLoginId').value : '').trim();
+    const wantPw = ($('baLoginPw') ? $('baLoginPw').value : '').trim();
+    // 입력 아이디가 이미 있으면 거부
+    if (wantId && (AUTH || []).some((a) => a.id === wantId)) { hint($('baHint'), '이미 사용 중인 로그인 아이디입니다. 다른 아이디를 입력하세요.', 'error'); return; }
     const regVal = $('baReg').value.trim();
     const branch = {
       id: uid('b'), name, group: parseInt($('baGroup').value, 10),
@@ -845,23 +854,30 @@
       hint($('baHint'), '추가하는 중…', '');
       const next = await mutateBranchesObj((o) => { o.branches = (o.branches || []).concat([branch]); return o; }, '사업소 추가: ' + name);
       BRANCHES = next.branches;
-      // 새 사업소 로그인 계정 자동 생성 (아이디 = 다음 번호, 초기 비번 = 1234)
-      let newId = '';
+      // 새 사업소 로그인 계정 생성 (아이디·비번 직접 부여 / 비우면 자동: 아이디=다음 번호, 비번=1234)
+      let newId = '', newPw = '';
       try {
-        const pw1234 = await sha256hex('1234');
+        const pwHash = await sha256hex(wantPw || '1234');
+        newPw = wantPw || '1234';
+        let dup = false;
         const nextAuth = await mutateAuth((o) => {
           const accs = o.accounts || [];
-          const maxNum = accs.reduce((m, a) => { const n = parseInt(a.id, 10); return (Number.isFinite(n) && n > m) ? n : m; }, 0);
-          newId = String(maxNum + 1);
-          o.accounts = accs.concat([{ id: newId, role: 'site', pwHash: pw1234, branchId: branch.id, branchName: name }]);
+          if (wantId) {
+            if (accs.some((a) => a.id === wantId)) { dup = true; return o; }
+            newId = wantId;
+          } else {
+            const maxNum = accs.reduce((m, a) => { const n = parseInt(a.id, 10); return (Number.isFinite(n) && n > m) ? n : m; }, 0);
+            newId = String(maxNum + 1);
+          }
+          o.accounts = accs.concat([{ id: newId, role: 'site', pwHash, branchId: branch.id, branchName: name }]);
           return o;
         }, '사업소 계정 추가: ' + name);
-        AUTH = nextAuth.accounts;
+        if (dup) { newId = ''; } else { AUTH = nextAuth.accounts; }
       } catch (e2) { newId = ''; }
       renderStatus(); renderReportFilter();
       $('hdrSub').textContent = `${BRANCHES.length}개 지점사업소 · 본사 ↔ 관리소장 소통`;
-      hint($('baHint'), newId ? `추가되었습니다! 로그인 아이디 ${newId} · 초기 비번 1234 (반영 1~2분)` : '추가되었습니다! (계정은 자동 생성 실패 — 다시 시도해 주세요)', newId ? 'success' : 'error');
-      setTimeout(() => closeModal('branchAddModal'), 1800);
+      hint($('baHint'), newId ? `추가되었습니다! [${name} · ${branch.group}군] 로그인 아이디 ${newId} · 비번 ${newPw} (반영 1~2분)` : '사업소는 추가됐지만 계정 생성 실패(아이디 중복 등) — 다시 시도해 주세요.', newId ? 'success' : 'error');
+      if (newId) setTimeout(() => closeModal('branchAddModal'), 2200);
     } catch (e) { hint($('baHint'), '오류: ' + e.message, 'error'); }
     finally { btn.disabled = false; }
   });
