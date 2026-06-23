@@ -146,7 +146,7 @@
     {
       "id": "sinhwa2",
       "name": "신화 2차",
-      "group": 1,
+      "group": 2,
       "regRate": 64.3,
       "committee": false,
       "developerRel": "우호",
