@@ -1,1 +1,25 @@
-[]
+[
+  {
+    "id": "rmqq005upg59b",
+    "branchId": "sinhwa1",
+    "branchName": "신화 1차",
+    "reporter": "ㅇㄹㅇㄹㅇㄹㅇㄹ",
+    "date": "2026.06.23",
+    "month": "2026-06",
+    "occupancy": {
+      "total": 6,
+      "occupied": 1,
+      "rate": 16.7
+    },
+    "items": {
+      "1": "dfd",
+      "2": "dfd",
+      "3": "fdfd",
+      "4": "dfdf",
+      "5": "dfdf",
+      "6": "dfdfdf"
+    },
+    "ts": 1782180079009,
+    "comments": []
+  }
+]
