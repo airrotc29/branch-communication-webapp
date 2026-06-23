@@ -21,5 +21,28 @@
     },
     "ts": 1782181388605,
     "comments": []
+  },
+  {
+    "id": "rmqq3mw2lnejt",
+    "branchId": "sinhwa1",
+    "branchName": "신화 1차",
+    "reporter": "보고",
+    "date": "2026.06.23",
+    "month": "2026-06",
+    "occupancy": {
+      "total": 88,
+      "occupied": 85,
+      "rate": 96.6
+    },
+    "items": {
+      "1": "보고",
+      "2": "보고",
+      "3": "보고",
+      "4": "보고",
+      "5": "보고",
+      "6": "보고"
+    },
+    "ts": 1782186178269,
+    "comments": []
   }
 ]
