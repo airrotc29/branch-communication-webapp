@@ -5,6 +5,7 @@
   'use strict';
 
   const OWNER = 'airrotc29', REPO = 'branch-communication-webapp', BRANCH = 'main';
+  const APP_VERSION = 'v21 · 2026.06.23 (계정 변경·초기화)';
   const API = 'https://api.github.com';
   const TOKEN_KEY = 'ace_admin_token';
   const LOCAL_KEY = 'ace_branch_reports_local';
@@ -12,6 +13,21 @@
   const REPORTS_PATH = 'assets/data/branch-reports.json';
   const TO_EMAIL = 'airrotc29@habitusinc.co.kr';
   const ENDPOINT = (window.ACE_REPORT_ENDPOINT || localStorage.getItem('ace_report_endpoint') || '').trim();
+
+  // ---------- 로그인 (아이디/비밀번호) ----------
+  // 계정은 assets/data/auth.json 에 저장(비밀번호는 SHA-256 해시). 없으면 아래 기본값.
+  const AUTH_PATH = 'assets/data/auth.json';
+  const DEFAULT_ACCOUNTS = [
+    { id: '소장', role: 'site', pwHash: '2a0b6287a0e65cff2844cf0887b1c19d960385071c4a0da3d90cfea2c3824e3f' }, // ace
+    { id: '본사', role: 'hq', pwHash: 'b89a1c3aae305aeca883f51f8e2442b9b5eb6178dfc845c751b7dcf952ac8b9e' }, // ace01
+  ];
+  let AUTH = DEFAULT_ACCOUNTS.slice();
+  const LOGIN_FLAG = 'ace_logged_in';
+  // 비밀번호 로그인 시 GitHub 저장에 쓸 토큰(난독화 문자열). 비우면 로컬 저장만 됨.
+  // 값 생성: 브라우저 콘솔에서 obfHelper('your_github_token') 실행 → 결과를 아래에 붙여넣기.
+  const EMBED_TOKEN_OBF = 'BioRWkVQaVEANzoDAXFwYzB3IHsAVE5AEi81BVRoc1VUHDZceEdQTFdzC2dEemNHFwAkSFxcWXIQIAACZgNsZyAUNnR/C1dQFQstd0RkfhQ7BDBoenBDUDt1XEBy';
+  function deobf(b64) { try { const s = atob(b64); const k = 'aCe2026!'; let o = ''; for (let i = 0; i < s.length; i++) o += String.fromCharCode(s.charCodeAt(i) ^ k.charCodeAt(i % k.length)); return o; } catch (e) { return ''; } }
+  window.obfHelper = function (t) { const k = 'aCe2026!'; let s = ''; for (let i = 0; i < t.length; i++) s += String.fromCharCode(t.charCodeAt(i) ^ k.charCodeAt(i % k.length)); return btoa(s); };
 
   const REPORT_ITEMS = [
     { k: '1', t: '관리단 구성 동정' },
@@ -36,6 +52,10 @@
   function b64ToUtf8(b64) { const bin = atob(b64.replace(/\s/g, '')); return new TextDecoder().decode(Uint8Array.from(bin, (c) => c.charCodeAt(0))); }
   function uid(p) { return p + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
   function todayStr(d) { d = d || new Date(); return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`; }
+  async function sha256hex(s) {
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+    return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('');
+  }
 
   // ---------- GitHub Contents API (본사 토큰 모드) ----------
   async function getContent(path) {
@@ -50,7 +70,7 @@
     const res = await fetch(`${API}/repos/${OWNER}/${REPO}/contents/${path}`, { method: 'PUT', headers: headers(), body: JSON.stringify(body) });
     if (!res.ok) {
       if (res.status === 403) throw new Error('이 토큰에 저장소 쓰기 권한이 없습니다. (403) — 토큰을 Contents: Read and write 권한으로 재발급한 뒤 다시 로그인하세요.');
-      if (res.status === 401) throw new Error('토큰이 만료/무효입니다. (401) — 본사 로그인을 다시 하세요.');
+      if (res.status === 401) throw new Error('토큰이 만료/무효입니다. (401) — 다시 로그인하세요.');
       throw new Error('저장 실패 (' + res.status + ')');
     }
     return res.json();
@@ -91,6 +111,32 @@
       const { obj, sha } = await getBranchesObj();
       const next = mutator(obj);
       try { await putContent(BRANCHES_PATH, utf8ToB64(JSON.stringify(next, null, 2)), message, sha); return next; }
+      catch (e) { lastErr = e; if (String(e.message).includes('(409)')) { await new Promise((r) => setTimeout(r, 700)); continue; } throw e; }
+    }
+    throw lastErr;
+  }
+
+  // ---------- 계정(auth.json) ----------
+  async function loadAuth() {
+    try {
+      const a = await fetch(AUTH_PATH + '?_cb=' + Date.now(), { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null));
+      if (a && Array.isArray(a.accounts) && a.accounts.length) return a.accounts;
+    } catch (e) {}
+    return DEFAULT_ACCOUNTS.slice();
+  }
+  async function getAuthObj() {
+    const data = await getContent(AUTH_PATH);
+    if (!data) return { obj: { accounts: DEFAULT_ACCOUNTS.slice() }, sha: null };
+    let obj = {}; try { obj = JSON.parse(b64ToUtf8(data.content)); } catch (e) { obj = {}; }
+    if (!obj || typeof obj !== 'object' || !Array.isArray(obj.accounts)) obj = { accounts: DEFAULT_ACCOUNTS.slice() };
+    return { obj, sha: data.sha };
+  }
+  async function mutateAuth(mutator, message) {
+    let lastErr;
+    for (let i = 0; i < 4; i++) {
+      const { obj, sha } = await getAuthObj();
+      const next = mutator(obj);
+      try { await putContent(AUTH_PATH, utf8ToB64(JSON.stringify(next, null, 2)), message, sha); return next; }
       catch (e) { lastErr = e; if (String(e.message).includes('(409)')) { await new Promise((r) => setTimeout(r, 700)); continue; } throw e; }
     }
     throw lastErr;
@@ -148,7 +194,7 @@
     if (report._local) { const local = getLocal(); local.reports = local.reports.filter((r) => r.id !== report.id); setLocal(local); return null; }
     if (hasToken()) return mutateReports((items) => items.filter((r) => r.id !== report.id), '보고 삭제');
     if (hasEndpoint()) return callEndpoint('deleteReport', { reportId: report.id });
-    throw new Error('삭제 권한이 없습니다 (본사 로그인 필요).');
+    throw new Error('삭제 권한이 없습니다 (로그인 필요).');
   }
   async function deleteComment(reportId, commentId) {
     const local0 = getLocal();
@@ -165,11 +211,14 @@
   let reportFilter = '', openReportId = null;
 
   // 새 보고(읽지 않은 보고) 추적 — 반짝임 표시용
+  // 새 보고/새 댓글 추적 — {reportId: 마지막으로 본 댓글 수}
   const SEEN_KEY = 'ace_seen_reports';
-  function getSeen() { try { return new Set(JSON.parse(localStorage.getItem(SEEN_KEY) || '[]')); } catch (e) { return new Set(); } }
-  function markSeen(id) { const s = getSeen(); if (!s.has(id)) { s.add(id); localStorage.setItem(SEEN_KEY, JSON.stringify([...s])); } }
-  function unseenCount() { const s = getSeen(); return REPORTS.filter((r) => !s.has(r.id)).length; }
-  function branchUnseen(bid) { const s = getSeen(); return REPORTS.some((r) => r.branchId === bid && !s.has(r.id)); }
+  function getSeen() { try { const o = JSON.parse(localStorage.getItem(SEEN_KEY) || '{}'); return (o && typeof o === 'object' && !Array.isArray(o)) ? o : {}; } catch (e) { return {}; } }
+  function setSeen(o) { localStorage.setItem(SEEN_KEY, JSON.stringify(o)); }
+  function isNew(r) { const s = getSeen(); const c = s[r.id]; if (c === undefined) return true; return (r.comments || []).length > c; }
+  function markSeen(r) { const s = getSeen(); s[r.id] = (r.comments || []).length; setSeen(s); }
+  function unseenCount() { return REPORTS.filter(isNew).length; }
+  function branchUnseen(bid) { return REPORTS.some((r) => r.branchId === bid && isNew(r)); }
   function updateTabDot() { const dot = $('reportTabDot'); if (dot) dot.hidden = unseenCount() === 0; }
 
   // ---------- 모달 ----------
@@ -224,9 +273,10 @@
       block.innerHTML = `<div class="group-head"><span class="group-badge g${g}">${g}군</span><span class="group-desc">${esc(META.groupCriteria && META.groupCriteria[g] || '')}</span></div>`;
       list.forEach((b) => {
         const cnt = REPORTS.filter((r) => r.branchId === b.id).length;
-        const dot = branchUnseen(b.id) ? '<span class="newdot"></span>' : '';
+        const newB = branchUnseen(b.id);
+        const dot = newB ? '<span class="newdot"></span>' : '';
         const card = document.createElement('button');
-        card.type = 'button'; card.className = `b-card g${g}`; card.dataset.id = b.id;
+        card.type = 'button'; card.className = `b-card g${g}` + (newB ? ' is-new' : ''); card.dataset.id = b.id;
         card.innerHTML =
           `<div class="b-top"><span class="b-name">${esc(b.name)}${dot}</span>` +
           `<span class="b-count">보고 ${cnt}건 ›</span></div>`;
@@ -260,18 +310,17 @@
     h += `<div class="d-sec-title">보고 이력 <span style="color:var(--soft);font-weight:600;">· ${reps.length}건 (최근순)</span></div>`;
     if (!reps.length) h += '<p class="rd-empty">아직 등록된 보고가 없습니다. 아래에서 첫 보고를 작성해 주세요.</p>';
     else {
-      const seenB = getSeen();
       h += '<div class="bh-list">';
       reps.forEach((r) => {
-        h += `<button type="button" class="bh-item" data-rid="${esc(r.id)}">` +
-          `<span class="bh-date">${esc(r.date)}${!seenB.has(r.id) ? ' <span class="new-badge">NEW</span>' : ''}</span>` +
+        const isN = isNew(r);
+        h += `<button type="button" class="bh-item${isN ? ' is-new' : ''}" data-rid="${esc(r.id)}">` +
+          `<span class="bh-date">${esc(r.date)}${isN ? ' <span class="new-badge">NEW</span>' : ''}</span>` +
           `<span class="bh-info">${esc(r.reporter)}${r.occupancy ? ` · 입주율 ${esc(r.occupancy.rate)}%` : ''}${r._local ? ' · <i style="color:var(--accent);font-style:normal;">이 기기</i>' : ''}</span>` +
           `<span class="bh-cmt">💬 ${(r.comments || []).length}</span>` +
           '</button>';
       });
       h += '</div>';
     }
-    h += `<button type="button" class="btn ghost block" id="branchReportBtn" style="margin-top:14px;">＋ 이 사업소 보고 작성</button>`;
 
     // 사업소 전략 정보 (있을 때만)
     if (b.status || (b.ownership && b.ownership.length) || b.situation || (b.managerActions && b.managerActions.length) || (b.hqActions && b.hqActions.length)) {
@@ -297,7 +346,6 @@
     }
 
     $('branchDetail').innerHTML = h;
-    $('branchReportBtn').addEventListener('click', () => { closeModal('branchModal'); openReportForm(b.id); });
     if ($('branchEditBtn')) $('branchEditBtn').addEventListener('click', () => openBranchEdit(b.id));
     // 보고 이력 항목 클릭 → 해당 보고 상세(+댓글)
     $('branchDetail').querySelectorAll('.bh-item').forEach((it) => {
@@ -314,7 +362,7 @@
   }
 
   async function moveBranchGroup(id, g) {
-    if (!hasToken()) { alert('군 이동은 본사 담당자 로그인이 필요합니다.'); return; }
+    if (!hasToken()) { alert('군 이동은 로그인이 필요합니다.'); return; }
     const hintEl = $('groupMoveHint');
     if (hintEl) hint(hintEl, `${g}군으로 이동 중…`, '');
     try {
@@ -329,7 +377,7 @@
   let editBranchId = null;
   function openBranchEdit(id) {
     const b = BRANCHES.find((x) => x.id === id); if (!b) return;
-    if (!hasToken()) { alert('전략 정보 수정은 본사 담당자 로그인이 필요합니다.'); $('loginToken').value = token(); openModal('loginModal'); return; }
+    if (!hasToken()) { alert('전략 정보 수정은 로그인이 필요합니다.'); openModal('loginModal'); return; }
     editBranchId = id;
     $('beTitle').textContent = `${b.name} — 전략 정보 수정`;
     $('beStatus').value = b.status || '';
@@ -352,7 +400,7 @@
   }
   $('beSubmit') && $('beSubmit').addEventListener('click', async () => {
     if (!editBranchId) return;
-    if (!hasToken()) { hint($('beHint'), '본사 담당자 로그인이 필요합니다.', 'error'); return; }
+    if (!hasToken()) { hint($('beHint'), '로그인이 필요합니다.', 'error'); return; }
     const patch = {
       status: $('beStatus').value.trim(),
       ownership: parseOwnership($('beOwnership').value),
@@ -390,11 +438,11 @@
       list.innerHTML =
         '<div class="info-card" style="text-align:center;">' +
           '<div style="font-size:34px;margin-bottom:6px;">🔒</div>' +
-          '<h3 style="text-align:center;">본사 담당자 전용</h3>' +
-          '<p style="color:var(--soft);margin-bottom:12px;">전체 사업소 보고 열람은 <b>본사 로그인</b>이 필요합니다.<br>관리소장님은 아래 ‘＋ 보고 작성’으로 보고를 올리실 수 있습니다.</p>' +
-          '<button type="button" class="btn block" id="goLoginBtn">본사 로그인</button>' +
+          '<h3 style="text-align:center;">로그인이 필요합니다</h3>' +
+          '<p style="color:var(--soft);margin-bottom:12px;">보고 열람·작성은 <b>로그인</b> 후 가능합니다.<br>본사·관리소장 모두 GitHub 토큰으로 로그인하면 보고가 GitHub에 저장됩니다.</p>' +
+          '<button type="button" class="btn block" id="goLoginBtn">로그인</button>' +
         '</div>';
-      const gl = $('goLoginBtn'); if (gl) gl.addEventListener('click', () => { $('loginToken').value = token(); openModal('loginModal'); });
+      const gl = $('goLoginBtn'); if (gl) gl.addEventListener('click', () => { openModal('loginModal'); });
       return;
     }
     if (filterField) filterField.style.display = '';
@@ -403,16 +451,16 @@
     list.innerHTML = '';
     if (!items.length) { empty.hidden = false; }
     else { empty.hidden = true; }
-    const seen = getSeen();
     items.forEach((r) => {
       const cmt = (r.comments || []).length;
+      const isN = isNew(r);
       const first = REPORT_ITEMS.map((it) => (r.items && r.items[it.k]) ? r.items[it.k] : '').find((x) => x) || '';
       const card = document.createElement('button');
-      card.type = 'button'; card.className = 'report-card'; card.dataset.id = r.id;
+      card.type = 'button'; card.className = 'report-card' + (isN ? ' is-new' : ''); card.dataset.id = r.id;
       card.innerHTML =
         '<div class="rc-top">' +
           `<span class="rc-branch">${esc(r.branchName)}</span>` +
-          (!seen.has(r.id) ? '<span class="new-badge">NEW</span>' : '') +
+          (isN ? '<span class="new-badge">NEW</span>' : '') +
           `<span class="rc-month">${esc(r.month || r.date)}</span>` +
           (r._local ? '<span class="rc-local">이 기기에만</span>' : '') +
         '</div>' +
@@ -474,22 +522,75 @@
       const next = await addReport(report);
       REPORTS = next ? mergeLocal(next) : await loadReports();
       renderReports(); renderStatus();
-      hint($('rmHint'), isCentral() ? '본사로 보고가 접수되었습니다! (GitHub 저장 · 반영까지 1~2분)' : '보고가 이 기기에 저장되었습니다. (GitHub 저장은 본사 로그인 필요)', 'success');
+      hint($('rmHint'), isCentral() ? '본사로 보고가 접수되었습니다! (GitHub 저장 · 반영까지 1~2분)' : '보고가 이 기기에 저장되었습니다. (GitHub 저장은 로그인 필요)', 'success');
       setTimeout(() => closeModal('reportModal'), 1100);
     } catch (e) { hint($('rmHint'), '오류: ' + e.message, 'error'); }
     finally { btn.disabled = false; }
   });
 
   // ---------- 보고 상세 + 댓글 ----------
+  // ---------- 보고서 PDF (인쇄 → PDF로 저장) ----------
+  function pdfBlock(num, title, body) {
+    return '<div style="margin-bottom:10px;">' +
+      `<div style="font-size:13px;font-weight:800;color:#0f2a4a;margin-bottom:4px;">${num}. ${esc(title)}</div>` +
+      `<div style="font-size:13px;line-height:1.7;white-space:pre-wrap;word-break:break-all;background:#f4f7fb;border-radius:8px;padding:9px 12px;">${esc(body)}</div>` +
+      '</div>';
+  }
+  function reportPdfHtml(r) {
+    let h = '<div style="font-family:\'Noto Sans KR\',sans-serif;color:#1f2937;width:100%;box-sizing:border-box;">';
+    h += '<div style="border-bottom:2px solid #123a6b;padding-bottom:8px;margin-bottom:14px;">' +
+      '<div style="font-size:12px;color:#1c5fc4;font-weight:700;">에이스 종합관리㈜ · 지점사업소 관리단 구성</div>' +
+      `<div style="font-size:22px;font-weight:900;color:#0f2a4a;">${esc(r.branchName)} 업무보고</div>` +
+      `<div style="font-size:12px;color:#5b6573;margin-top:4px;">보고자 ${esc(r.reporter)} · ${esc(r.date)}</div>` +
+      '</div>';
+    if (r.occupancy) h += pdfBlock('0', '입주현황', `입주 ${r.occupancy.occupied}호실 / 전체 ${r.occupancy.total}호실 · 입주율 ${r.occupancy.rate}%`);
+    REPORT_ITEMS.forEach((it) => { const v = (r.items && r.items[it.k]) || ''; if (v) h += pdfBlock(it.k, it.t, v); });
+    const cmts = r.comments || [];
+    if (cmts.length) {
+      h += '<div style="margin-top:14px;font-weight:800;color:#0f2a4a;border-top:1px solid #e2e8f0;padding-top:10px;margin-bottom:6px;">본사 ↔ 현장 소통</div>';
+      cmts.forEach((c) => {
+        const hq = c.role === 'hq';
+        h += `<div style="margin:6px 0;padding:8px 12px;border-radius:8px;background:${hq ? '#e8f0fe' : '#fff8e1'};">` +
+          `<b style="font-size:11px;color:${hq ? '#1c5fc4' : '#9a7b00'};">${hq ? '본사' : '현장(소장)'}</b> ` +
+          `<span style="font-size:11px;color:#999;">${esc(c.date)}</span>` +
+          `<div style="font-size:13px;line-height:1.6;white-space:pre-wrap;word-break:break-all;">${esc(c.body)}</div></div>`;
+      });
+    }
+    return h + '</div>';
+  }
+  function genReportPdf(r) {
+    // 새 창에 보고서를 그려 인쇄(=PDF로 저장) — 한글이 완벽히 나오고 백지 문제 없음
+    const w = window.open('', '_blank');
+    if (!w) { alert('PDF 저장을 위해 팝업을 허용해 주세요. (브라우저 주소창의 팝업 차단 해제)'); return; }
+    const title = esc((r.branchName || '업무보고') + ' 업무보고 ' + (r.date || ''));
+    const css = '@page{size:A4;margin:14mm}' +
+      '*{box-sizing:border-box}' +
+      "body{font-family:'Noto Sans KR',-apple-system,BlinkMacSystemFont,sans-serif;color:#1f2937;margin:0;padding:18px;-webkit-print-color-adjust:exact;print-color-adjust:exact;}" +
+      '@media print{body{padding:0}}';
+    w.document.open();
+    w.document.write(
+      '<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">' +
+      '<meta name="viewport" content="width=device-width, initial-scale=1">' +
+      '<title>' + title + '</title>' +
+      '<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700;900&display=swap" rel="stylesheet">' +
+      '<style>' + css + '</style></head><body>' +
+      reportPdfHtml(r) +
+      '<scr' + 'ipt>window.onload=function(){setTimeout(function(){try{window.focus();window.print();}catch(e){}},500);};<\/scr' + 'ipt>' +
+      '</body></html>'
+    );
+    w.document.close();
+  }
+
   function openReportDetail(id) {
     const r = REPORTS.find((x) => x.id === id);
     if (!r) { closeModal('reportDetailModal'); return; }
     openReportId = id;
-    if (!getSeen().has(id)) { markSeen(id); renderStatus(); renderReports(); } // 읽음 처리 → 반짝임 해제
+    if (isNew(r)) { markSeen(r); renderStatus(); renderReports(); } else { markSeen(r); } // 읽음(댓글 수 포함) 처리 → 표시 해제
     updateTabDot();
     const comments = r.comments || [];
     let h = `<h2>${esc(r.branchName)} 업무보고</h2>`;
-    h += `<div class="rc-meta" style="margin:6px 0 12px;">보고자 ${esc(r.reporter)} · ${esc(r.date)}${r._local ? ' · <span style="color:var(--accent);font-weight:700;">이 기기에만 저장됨</span>' : ''}</div>`;
+    h += `<div class="rc-meta" style="margin:6px 0 10px;">보고자 ${esc(r.reporter)} · ${esc(r.date)}${r._local ? ' · <span style="color:var(--accent);font-weight:700;">이 기기에만 저장됨</span>' : ''}</div>`;
+    h += '<button type="button" class="btn block" id="pdfBtn" style="margin-bottom:14px;">📄 이 보고서 PDF로 저장</button>';
     if (r.occupancy) {
       h += `<div class="r-block"><div class="bt"><span class="num zero">0</span>입주현황</div><div class="bd">입주 ${esc(r.occupancy.occupied)}호실 / 전체 ${esc(r.occupancy.total)}호실 · <b>입주율 ${esc(r.occupancy.rate)}%</b></div></div>`;
     }
@@ -515,6 +616,8 @@
 
     $('reportDetail').innerHTML = h;
     openModal('reportDetailModal');
+
+    if ($('pdfBtn')) $('pdfBtn').addEventListener('click', function () { genReportPdf(r, this); });
 
     $('cSubmit').addEventListener('click', async () => {
       const role = $('cRole').value, body = $('cBody').value.trim();
@@ -548,21 +651,22 @@
     document.body.classList.toggle('admin-on', on);
     const pill = $('adminPill');
     pill.classList.toggle('on', on);
-    pill.textContent = on ? '본사 ✓' : '본사';
+    pill.textContent = on ? '로그인 ✓' : '로그인';
     $('logoutBtn').style.display = on ? 'block' : 'none';
+    if ($('changeCredBtn')) $('changeCredBtn').style.display = on ? 'block' : 'none';
     if ($('addBranchBtn')) $('addBranchBtn').style.display = on ? 'inline-flex' : 'none';
   }
 
   // ---------- 사업소 추가 (본사 담당자) ----------
   $('addBranchBtn') && $('addBranchBtn').addEventListener('click', () => {
-    if (!hasToken()) { alert('사업소 추가는 본사 담당자 로그인이 필요합니다.'); $('loginToken').value = token(); openModal('loginModal'); return; }
+    if (!hasToken()) { alert('사업소 추가는 로그인이 필요합니다.'); openModal('loginModal'); return; }
     $('baName').value = ''; $('baReg').value = ''; $('baGroup').value = '3';
     hint($('baHint'), '', ''); openModal('branchAddModal');
   });
   $('baSubmit') && $('baSubmit').addEventListener('click', async () => {
     const name = $('baName').value.trim();
     if (!name) { hint($('baHint'), '사업소명을 입력해 주세요.', 'error'); return; }
-    if (!hasToken()) { hint($('baHint'), '본사 담당자 로그인이 필요합니다.', 'error'); return; }
+    if (!hasToken()) { hint($('baHint'), '로그인이 필요합니다.', 'error'); return; }
     const regVal = $('baReg').value.trim();
     const branch = {
       id: uid('b'), name, group: parseInt($('baGroup').value, 10),
@@ -582,25 +686,81 @@
     } catch (e) { hint($('baHint'), '오류: ' + e.message, 'error'); }
     finally { btn.disabled = false; }
   });
-  $('adminPill').addEventListener('click', () => { $('loginToken').value = token(); hint($('loginHint'), '', ''); openModal('loginModal'); });
+  $('adminPill').addEventListener('click', () => { if ($('loginPw')) $('loginPw').value = ''; hint($('loginHint'), '', ''); openModal('loginModal'); });
   $('loginSubmit').addEventListener('click', async () => {
-    const t = $('loginToken').value.trim();
-    if (!t) { hint($('loginHint'), '토큰을 입력해 주세요.', 'error'); return; }
+    const id = ($('loginId').value || '').trim();
+    const pw = $('loginPw').value || '';
     hint($('loginHint'), '확인 중…', '');
-    try {
-      if (!(await verifyToken(t))) { hint($('loginHint'), '유효하지 않은 토큰이거나 저장소 권한이 없습니다.', 'error'); return; }
-      localStorage.setItem(TOKEN_KEY, t); setAdmin(true);
-      hint($('loginHint'), '', ''); closeModal('loginModal');
-      REPORTS = await loadReports(); renderReports(); refreshNote();
-    } catch (e) { hint($('loginHint'), '오류: ' + e.message, 'error'); }
+    AUTH = await loadAuth();
+    const acc = AUTH.find((a) => a.id === id);
+    const ok = acc && (await sha256hex(pw)) === acc.pwHash;
+    if (!ok) { hint($('loginHint'), '아이디 또는 비밀번호가 올바르지 않습니다.', 'error'); return; }
+    // 내장 토큰이 있으면 GitHub 저장 활성화
+    const tok = EMBED_TOKEN_OBF ? deobf(EMBED_TOKEN_OBF) : '';
+    if (tok) localStorage.setItem(TOKEN_KEY, tok); else localStorage.removeItem(TOKEN_KEY);
+    localStorage.setItem(LOGIN_FLAG, '1');
+    localStorage.setItem('ace_acct', acc.id);
+    localStorage.setItem('ace_role', acc.role);
+    setAdmin(true);
+    hint($('loginHint'), '', ''); closeModal('loginModal');
+    REPORTS = await loadReports(); renderReports(); renderStatus(); refreshNote();
   });
-  $('logoutBtn').addEventListener('click', () => { localStorage.removeItem(TOKEN_KEY); setAdmin(false); closeModal('loginModal'); refreshNote(); renderReports(); });
+  $('logoutBtn').addEventListener('click', () => { localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(LOGIN_FLAG); localStorage.removeItem('ace_acct'); setAdmin(false); closeModal('loginModal'); refreshNote(); renderReports(); renderStatus(); });
+
+  // ---------- 아이디/비밀번호 변경 ----------
+  function curRole() { return localStorage.getItem('ace_role') || ''; }
+  function curAcct() { return localStorage.getItem('ace_acct') || ''; }
+  $('changeCredBtn') && $('changeCredBtn').addEventListener('click', () => {
+    if (!isAdmin()) { alert('로그인 후 변경할 수 있습니다.'); return; }
+    $('ccNewId').value = curAcct();
+    $('ccNewPw').value = ''; $('ccNewPw2').value = '';
+    $('resetCredBtn').style.display = curRole() === 'hq' ? 'block' : 'none';
+    hint($('ccHint'), '', ''); closeModal('loginModal'); openModal('changeCredModal');
+  });
+  $('ccSubmit') && $('ccSubmit').addEventListener('click', async () => {
+    if (!hasToken()) { hint($('ccHint'), '저장 권한이 없습니다(토큰 필요).', 'error'); return; }
+    const newId = ($('ccNewId').value || '').trim();
+    const newPw = $('ccNewPw').value || '';
+    const newPw2 = $('ccNewPw2').value || '';
+    const oldId = curAcct();
+    if (!newId) { hint($('ccHint'), '아이디를 입력해 주세요.', 'error'); return; }
+    if (!newPw) { hint($('ccHint'), '새 비밀번호를 입력해 주세요.', 'error'); return; }
+    if (newPw !== newPw2) { hint($('ccHint'), '새 비밀번호가 일치하지 않습니다.', 'error'); return; }
+    const btn = $('ccSubmit'); btn.disabled = true;
+    try {
+      hint($('ccHint'), '저장 중…', '');
+      const hash = await sha256hex(newPw);
+      const next = await mutateAuth((o) => {
+        const accs = o.accounts || [];
+        if (newId !== oldId && accs.some((a) => a.id === newId)) throw new Error('이미 있는 아이디입니다.');
+        o.accounts = accs.map((a) => (a.id === oldId ? Object.assign({}, a, { id: newId, pwHash: hash }) : a));
+        return o;
+      }, '계정 변경: ' + newId);
+      AUTH = next.accounts;
+      localStorage.setItem('ace_acct', newId);
+      hint($('ccHint'), '변경되었습니다! (반영까지 1~2분)', 'success');
+      setTimeout(() => closeModal('changeCredModal'), 1200);
+    } catch (e) { hint($('ccHint'), '오류: ' + e.message, 'error'); }
+    finally { btn.disabled = false; }
+  });
+  $('resetCredBtn') && $('resetCredBtn').addEventListener('click', async () => {
+    if (curRole() !== 'hq') { alert('본사만 초기화할 수 있습니다.'); return; }
+    if (!confirm('모든 계정을 기본값(소장/ace, 본사/ace01)으로 초기화할까요?')) return;
+    const btn = $('resetCredBtn'); btn.disabled = true;
+    try {
+      hint($('ccHint'), '초기화 중…', '');
+      const next = await mutateAuth((o) => { o.accounts = DEFAULT_ACCOUNTS.slice(); return o; }, '계정 초기화');
+      AUTH = next.accounts;
+      hint($('ccHint'), '초기화되었습니다. 기본: 소장/ace, 본사/ace01 (반영 1~2분)', 'success');
+    } catch (e) { hint($('ccHint'), '오류: ' + e.message, 'error'); }
+    finally { btn.disabled = false; }
+  });
 
   function refreshNote() {
     const note = $('reportNote');
     if (isCentral()) { note.hidden = true; return; }
     note.hidden = false;
-    note.innerHTML = '<b>안내</b> · 본사 로그인 전이라 보고가 <b>이 기기에만</b> 저장됩니다. GitHub에 저장해 전체가 함께 보려면 헤더의 <b>‘본사’</b> 로그인이 필요합니다.';
+    note.innerHTML = '<b>안내</b> · 로그인 전이라 보고가 <b>이 기기에만</b> 저장됩니다. GitHub에 저장해 전체가 함께 보려면 헤더의 <b>‘로그인’</b>을 눌러 토큰으로 로그인하세요. (본사·관리소장 공용)';
   }
 
   // 내장 기본 사업소 목록 — branches.json 로드 실패(파일 직접 열기 등) 시에도 12개가 항상 선택되도록 보장.
@@ -627,14 +787,33 @@
       META = meta || {};
       BRANCHES = (meta && Array.isArray(meta.branches) && meta.branches.length) ? meta.branches : FALLBACK_BRANCHES;
     } catch (e) { META = {}; BRANCHES = FALLBACK_BRANCHES; }
-    $('hdrSub').textContent = `${BRANCHES.length}개 지점사업소 · 본사 ↔ 관리소장 소통`;
+    $('hdrSub').textContent = `${BRANCHES.length}개 지점사업소 · ${APP_VERSION}`;
     renderStatus();
     renderReportFilter();
-    if (hasToken()) { verifyToken(token()).then((ok) => { if (ok) setAdmin(true); }); }
+    if (localStorage.getItem(LOGIN_FLAG) === '1') { if (EMBED_TOKEN_OBF && !hasToken()) localStorage.setItem(TOKEN_KEY, deobf(EMBED_TOKEN_OBF)); setAdmin(true); }
+    loadAuth().then((a) => { AUTH = a; });
     REPORTS = await loadReports();
     renderReports();
     renderStatus(); // 보고 건수 반영
     refreshNote();
   }
   init();
+
+  // ---------- 앱 나가기 확인 ----------
+  (function () {
+    let leaving = false;
+    // 모바일/데스크탑 뒤로가기 가로채기
+    try { history.pushState({ ace: 1 }, '', location.href); } catch (e) {}
+    window.addEventListener('popstate', function () {
+      if (leaving) return;
+      if (window.confirm('앱을 나가시겠습니까?')) { leaving = true; history.back(); }
+      else { try { history.pushState({ ace: 1 }, '', location.href); } catch (e) {} }
+    });
+    // 탭 닫기·새로고침·주소 이동 시 브라우저 확인창
+    window.addEventListener('beforeunload', function (e) {
+      if (leaving) return;
+      e.preventDefault();
+      e.returnValue = '';
+    });
+  })();
 })();
