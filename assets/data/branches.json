@@ -426,6 +426,22 @@
       "situation": "",
       "managerActions": [],
       "hqActions": []
+    },
+    {
+      "id": "bmqqgrpeapccs",
+      "name": "미자빌딩",
+      "group": 3,
+      "regRate": null,
+      "committee": false,
+      "developerRel": "?",
+      "managerAbility": "?",
+      "allyRecruited": "?",
+      "status": "",
+      "ownership": [],
+      "ownershipTotal": "",
+      "situation": "",
+      "managerActions": [],
+      "hqActions": []
     }
   ]
 }
