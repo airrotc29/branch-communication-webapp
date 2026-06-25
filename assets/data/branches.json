@@ -410,38 +410,6 @@
         "추진위 동정 파악 및 대응",
         "관리단 설립 본사 차원 지원계획 수립·브리핑"
       ]
-    },
-    {
-      "id": "bmqqf532oviex",
-      "name": "미자빌딩",
-      "group": 3,
-      "regRate": null,
-      "committee": false,
-      "developerRel": "?",
-      "managerAbility": "?",
-      "allyRecruited": "?",
-      "status": "",
-      "ownership": [],
-      "ownershipTotal": "",
-      "situation": "",
-      "managerActions": [],
-      "hqActions": []
-    },
-    {
-      "id": "bmqqgrpeapccs",
-      "name": "미자빌딩",
-      "group": 3,
-      "regRate": null,
-      "committee": false,
-      "developerRel": "?",
-      "managerAbility": "?",
-      "allyRecruited": "?",
-      "status": "",
-      "ownership": [],
-      "ownershipTotal": "",
-      "situation": "",
-      "managerActions": [],
-      "hqActions": []
     }
   ]
 }
