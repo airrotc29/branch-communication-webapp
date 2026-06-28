@@ -54,7 +54,7 @@
     {
       "id": "present",
       "name": "프리센트",
-      "group": 1,
+      "group": 2,
       "regRate": null,
       "committee": true,
       "developerRel": "우호",
