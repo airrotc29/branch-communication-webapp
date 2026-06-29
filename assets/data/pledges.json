@@ -1,3 +1,12 @@
 {
-  "pledges": {}
+  "pledges": {
+    "1": {
+      "name": "최재우",
+      "accountId": "1",
+      "branchId": "sinhwa1",
+      "branchName": "신화 1차",
+      "date": "2026.06.29",
+      "ts": 1782697532991
+    }
+  }
 }
