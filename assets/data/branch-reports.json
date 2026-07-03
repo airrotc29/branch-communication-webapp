@@ -710,7 +710,16 @@
     },
     "freeNote": "내용을 수정합니다.",
     "ts": 1782720318348,
-    "comments": [],
+    "comments": [
+      {
+        "id": "cmr46m4s73o2o",
+        "author": "현장",
+        "role": "site",
+        "body": "재계약 추진",
+        "date": "2026.07.03",
+        "ts": 1783037708215
+      }
+    ],
     "attachments": []
   }
 ]
